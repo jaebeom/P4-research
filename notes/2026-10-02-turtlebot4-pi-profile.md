@@ -68,6 +68,9 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 | Pi 총 CPU 사용률 (100 − id) | 기준(구독 없음) 23.9 % → `scan` hz 24.4 / bw 24.3 → 영상 raw hz 27.2 / bw 27.3 → compressed bw 27.8 % | `top -bn2 -d 5` | 2026-10-02 | 측정 (조건당 1회) |
 | 기준 대비 증가 | `scan` +0.4 ~ +0.5 %p, raw +3.3 ~ +3.4 %p, compressed +3.9 %p. 4코어 합계 기준이라 코어 1개 = 25 %p. `scan` 증가는 1회 측정으로는 잡음과 구분되지 않을 수 있다 | 위 행 차이 | 2026-10-02 | 추정 |
 | 위 CPU 증가의 구성 | 발행 쪽 비용 + **구독자(`ros2 topic`)가 Pi 안에서 도는 비용**이 섞여 있다. 둘을 나누지 못했다 | - | - | 미확인 |
+| 측정한 영상 스트림 | `rgb/preview` 한 종류. 250 × 250 (메시지 0.19 MB에서 역산), 30 Hz. `rgb/image_raw`나 `stereo/...` 토픽은 없고 `oakd` 토픽이 7개뿐이어서 **카메라 설정(yaml)을 바꾼 흔적은 보이지 않는다**. 설정 파일 자체는 읽지 않았다 | `ros2 topic list`, `bw`, `hz` | 2026-10-02 | 추정 |
+| 카메라 설정을 키우면 (가정) | 예를 들어 640 × 480 RGB를 30 Hz로 raw 전송하면 640 × 480 × 3 B = 921,600 B/프레임 × 30 = 27.6 MB/s (약 221 Mbit/s). 지금 측정값(5.67 MB/s)의 약 4.9배. Depth(16비트)를 같은 크기로 더하면 raw로 약 18.4 MB/s가 더해진다 | 곱셈 | 2026-10-02 | 추정 (계산식) |
+| `camera_info`가 알려주는 것 | 해상도(`width`, `height`)와 카메라 내부 파라미터(`K`, `D`, `P` 등). **프레임 속도(fps)는 들어 있지 않다.** fps는 `ros2 topic hz`로 잰다 | `sensor_msgs/msg/CameraInfo` 정의 (확인 안 함, 기억에 의존) | - | 미확인 |
 | `get_throttled` | 기준, 모든 구독 구간, 측정 종료 후까지 계속 `0x0` | `vcgencmd get_throttled` | 2026-10-02 | 측정 |
 | 온도 | 50.1 → 51.6 → 52.1 → 52.5 → 53.0 °C (약 2분 동안 구간마다). 계속 올랐고 어디서 멈추는지는 모른다 | `vcgencmd measure_temp` | 2026-10-02 | 측정 (포화 여부 미확인) |
 | load average | 1.13 / 0.85 / 0.73 (12:32, 업타임 39분) | `uptime` | 2026-10-02 | 측정 |
@@ -186,6 +189,7 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 - [x] 3번에서 `get_throttled`를 언도크 후 카메라 구독 중에 다시 읽는다 (`0x0` 유지됨, 약 2분 구간)
 - [x] 3번에서 `image_raw`, `compressed`, `/scan`의 Hz, 대역폭, Pi CPU %를 조건별로 잰다 (Pi 안 구독, 1회)
 - [x] 도킹 상태와 카메라 토픽 발행 관계를 3번 로봇에서 다시 확인한다 (언도크 후 발행됨, USB ID `2485` → `f63b`로 바뀜)
+- [ ] 팀이 카메라 설정(yaml)을 바꾸면, 바꾼 **뒤에** 같은 측정을 다시 한다. 적용 확인은 `camera_info`의 `width` / `height`와 `ros2 topic hz`로 한다. 바꾸기 전에 원본 파일을 백업하고 팀과 합의한다 (같은 로봇을 쓰는 다른 팀과 겹치지 않게)
 - [ ] 같은 조건을 3번 이상 반복해서 CPU 증가량의 변동 폭을 본다
 - [ ] `zstd`, `theora` 구독도 재서 `compressed`와 비교한다
 - [ ] 언도크 후 `lsusb -t`로 카메라가 USB 3 버스(5000M)에 있는지 본다 (이번에는 `lsusb`로 `Bus 002`와 `f63b`만 확인)
@@ -195,5 +199,5 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 ## 출처
 
 1. Raspberry Pi Documentation, Raspberry Pi OS (`vcgencmd get_throttled` 비트 표), https://www.raspberrypi.com/documentation/computers/os.html, 확인일 2026-10-02
-2. ROS 2 `sensor_msgs/msg/BatteryState` 메시지 정의 (`power_supply_status`), 확인일 2026-10-02. 링크는 아직 붙이지 않았다 (미확인: 노트 검토 시 추가)
+2. ROS 2 `sensor_msgs/msg/BatteryState` 메시지 정의 (`power_supply_status` 0 = UNKNOWN, 1 = CHARGING, 2 = DISCHARGING, 3 = NOT_CHARGING, 4 = FULL. `current`는 방전 때 음수), https://raw.githubusercontent.com/ros2/common_interfaces/jazzy/sensor_msgs/msg/BatteryState.msg, 확인일 2026-10-02 (docs.ros.org는 봇 차단 화면이 나와서 GitHub 원본으로 확인)
 3. 로봇 4번 현장 명령 출력 (`htop`, `free -h`, `df -h`, `vcgencmd`, `ros2 ...`), 2026-10-02 11:38 KST 이후
