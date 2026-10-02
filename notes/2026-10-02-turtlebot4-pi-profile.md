@@ -68,7 +68,12 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 | Pi 총 CPU 사용률 (100 − id) | 기준(구독 없음) 23.9 % → `scan` hz 24.4 / bw 24.3 → 영상 raw hz 27.2 / bw 27.3 → compressed bw 27.8 % | `top -bn2 -d 5` | 2026-10-02 | 측정 (조건당 1회) |
 | 기준 대비 증가 | `scan` +0.4 ~ +0.5 %p, raw +3.3 ~ +3.4 %p, compressed +3.9 %p. 4코어 합계 기준이라 코어 1개 = 25 %p. `scan` 증가는 1회 측정으로는 잡음과 구분되지 않을 수 있다 | 위 행 차이 | 2026-10-02 | 추정 |
 | 위 CPU 증가의 구성 | 발행 쪽 비용 + **구독자(`ros2 topic`)가 Pi 안에서 도는 비용**이 섞여 있다. 둘을 나누지 못했다 | - | - | 미확인 |
-| 측정한 영상 스트림 | `rgb/preview` 한 종류. 250 × 250 (메시지 0.19 MB에서 역산), 30 Hz. `rgb/image_raw`나 `stereo/...` 토픽은 없고 `oakd` 토픽이 7개뿐이어서 **카메라 설정(yaml)을 바꾼 흔적은 보이지 않는다**. 설정 파일 자체는 읽지 않았다 | `ros2 topic list`, `bw`, `hz` | 2026-10-02 | 추정 |
+| 측정한 영상 스트림 | `rgb/preview` 한 종류. 250 × 250 (메시지 0.19 MB에서 역산), 30 Hz. `rgb/image_raw`나 `stereo/...` 토픽은 없고 `oakd` 토픽이 7개뿐이었다 | `ros2 topic list`, `bw`, `hz` | 2026-10-02 | 측정 |
+| 로봇 3번 `oakd_pro.yaml` 현재 값 | `camera.i_pipeline_type: RGB`, `camera.i_usb_speed: SUPER_PLUS`, `camera.i_enable_imu: false`, `rgb.i_resolution: '1080P'`, `rgb.i_width: 1280`, `rgb.i_height: 720`, `rgb.i_fps: 30.0`, `rgb.i_enable_preview: true`, `rgb.i_preview_size: 250`, `rgb.i_low_bandwidth: true`, **`rgb.i_publish_topic: false`** | 로봇의 `/opt/ros/jazzy/share/turtlebot4_bringup/config/oakd_pro.yaml`을 PC로 복사해 읽음 (583 B) | 2026-10-02 | 측정 |
+| 위 설정과 관측의 일치 | `i_publish_topic: false`라서 `rgb/image_raw`가 없고, `i_preview_size: 250`이라서 preview가 250 × 250이며, `i_pipeline_type: RGB`라서 `stereo` 토픽이 없다. 관측과 모두 맞는다. 설정이 기본값에서 바뀌었는지는 원본과 대조하지 않아 **알 수 없지만**, 바꾼 흔적은 보이지 않는다 | 위 두 행 비교 | 2026-10-02 | 추정 |
+| `i_resolution: 1080P`일 때 출력 크기 | 소스에서 ISP 축소 비율 기본값이 2/3이므로 1920 × 1080이 **1280 × 720**이 된다. `i_width` / `i_height`도 1280 / 720이다. 즉 **지금 yaml이 이미 1280 × 720을 가리킨다**. 이 크기의 메인 스트림을 내보내는 스위치가 `i_publish_topic`이다 (`false` → `true`) | depthai-ros `jazzy` 브랜치 `sensor_param_handler.cpp`, `rgb.cpp` (아래 출처 4) | 2026-10-02 | 인용 + 추정 (로봇에 설치된 버전은 확인 안 함) |
+| `i_low_bandwidth: true`의 효과 | 소스상 메인 RGB 스트림은 카메라 안의 비디오 인코더(기본 MJPEG, 품질 50)를 거친다. preview 스트림에는 인코더가 붙지 않는다. 그래서 **preview에서 잰 Pi CPU 값은 메인 스트림에 그대로 적용되지 않을 수 있다** | `rgb.cpp`, `sensor_param_handler.cpp` | 2026-10-02 | 인용 + 추정 |
+| Depth를 켜면 크기 | `stereo.i_align_depth`가 기본 `true`이고, 켜져 있으면 깊이 크기를 RGB의 `i_width` / `i_height`에서 가져온다. 1280 × 720은 16의 배수라서 소스의 정렬 경고 조건(16으로 나누어떨어지지 않을 때)에 걸리지 않는다. 다만 이 크기로 깊이를 30 Hz로 내보낼 때 카메라, USB, Pi가 버티는지는 **미확인** | `stereo_param_handler.cpp`, `sensor_param_handler.cpp` | 2026-10-02 | 인용 + 추정 |
 | 카메라 설정을 키우면 (가정) | 예를 들어 640 × 480 RGB를 30 Hz로 raw 전송하면 640 × 480 × 3 B = 921,600 B/프레임 × 30 = 27.6 MB/s (약 221 Mbit/s). 지금 측정값(5.67 MB/s)의 약 4.9배. Depth(16비트)를 같은 크기로 더하면 raw로 약 18.4 MB/s가 더해진다 | 곱셈 | 2026-10-02 | 추정 (계산식) |
 | `camera_info`가 알려주는 것 | 필드는 `header`, `height`, `width`, `distortion_model`, `d`, `k`, `r`, `p`, `binning_x`, `binning_y`, `roi`뿐이다. 해상도와 카메라 내부 파라미터는 있지만 **프레임 속도(fps) 필드는 없다.** fps는 `ros2 topic hz`로 잰다 | `ros2 interface show sensor_msgs/msg/CameraInfo` (주석 줄 제외) | 2026-10-02 | 측정 |
 | `get_throttled` | 기준, 모든 구독 구간, 측정 종료 후까지 계속 `0x0` | `vcgencmd get_throttled` | 2026-10-02 | 측정 |
@@ -189,6 +194,8 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 - [x] 3번에서 `get_throttled`를 언도크 후 카메라 구독 중에 다시 읽는다 (`0x0` 유지됨, 약 2분 구간)
 - [x] 3번에서 `image_raw`, `compressed`, `/scan`의 Hz, 대역폭, Pi CPU %를 조건별로 잰다 (Pi 안 구독, 1회)
 - [x] 도킹 상태와 카메라 토픽 발행 관계를 3번 로봇에서 다시 확인한다 (언도크 후 발행됨, USB ID `2485` → `f63b`로 바뀜)
+- [x] 3번 `oakd_pro.yaml`을 읽었다 (현재 값은 위 표)
+- [ ] 로봇에 설치된 depthai-ros 버전이 소스(`jazzy` 브랜치)와 같은지 확인한다 (`dpkg -l | grep -i depthai`)
 - [ ] 팀이 카메라 설정(yaml)을 바꾸면, 바꾼 **뒤에** 같은 측정을 다시 한다. 적용 확인은 `camera_info`의 `width` / `height`와 `ros2 topic hz`로 한다. 바꾸기 전에 원본 파일을 백업하고 팀과 합의한다 (같은 로봇을 쓰는 다른 팀과 겹치지 않게)
 - [ ] 같은 조건을 3번 이상 반복해서 CPU 증가량의 변동 폭을 본다
 - [ ] `zstd`, `theora` 구독도 재서 `compressed`와 비교한다
@@ -201,3 +208,4 @@ question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업�
 1. Raspberry Pi Documentation, Raspberry Pi OS (`vcgencmd get_throttled` 비트 표), https://www.raspberrypi.com/documentation/computers/os.html, 확인일 2026-10-02
 2. ROS 2 `sensor_msgs/msg/BatteryState` 메시지 정의 (`power_supply_status` 0 = UNKNOWN, 1 = CHARGING, 2 = DISCHARGING, 3 = NOT_CHARGING, 4 = FULL. `current`는 방전 때 음수), https://raw.githubusercontent.com/ros2/common_interfaces/jazzy/sensor_msgs/msg/BatteryState.msg, 확인일 2026-10-02 (docs.ros.org는 봇 차단 화면이 나와서 GitHub 원본으로 확인)
 3. 로봇 4번 현장 명령 출력 (`htop`, `free -h`, `df -h`, `vcgencmd`, `ros2 ...`), 2026-10-02 11:38 KST 이후
+4. luxonis/depthai-ros `jazzy` 브랜치 소스: `depthai_ros_driver/src/param_handlers/sensor_param_handler.cpp`, `depthai_ros_driver/src/dai_nodes/sensors/rgb.cpp`, `depthai_ros_driver/src/param_handlers/stereo_param_handler.cpp`, https://github.com/luxonis/depthai-ros/tree/jazzy/depthai_ros_driver/src, 확인일 2026-10-02 (로봇에 설치된 패키지 버전은 확인하지 않았다)
