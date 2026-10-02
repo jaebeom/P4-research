@@ -1,0 +1,232 @@
+---
+title: TurtleBot4 Raspberry Pi 사양과 부하 프로파일 (팀 로봇 3번, 로봇 4번)
+date: 2026-10-02
+status: draft   # draft | reviewed | final
+question: TurtleBot4의 Raspberry Pi는 어떤 여유가 있고, 어떤 작업을 Pi에 두고 어떤 작업을 PC에 둬야 하는가?
+---
+
+# TurtleBot4 Raspberry Pi 사양과 부하 프로파일 (팀 로봇 3번, 로봇 4번)
+
+> **관찰 대상 주의:** 이 노트에는 로봇 두 대의 값이 있다. 섞어 읽지 않는다.
+> - **팀 로봇 3번 (`/robot3`)**: 우리 로봇. 도킹 중 유휴 상태에서 읽었다.
+> - **로봇 4번 (`/robot4`)**: 다른 팀 로봇으로 보인다. 3번이 꺼져 있던 동안 대신 읽었고 **읽기 전용 명령만** 실행했다.
+>
+> 같은 TurtleBot4라도 **Pi의 RAM이 다르다** (3번 약 3.7 GiB, 4번 약 1.8 GiB). 4번 값을 3번에 그대로 적용하면 안 된다.
+
+## 결론 (한 문장)
+팀 로봇 3번에서 카메라와 LiDAR를 켠 정지 상태로 잰 결과, 영상은 raw(약 5.7 MB/s)보다 기존 `compressed` 토픽(약 0.63 MB/s)이 약 9배 작고 Pi 총 CPU 사용률은 기준 대비 raw 구독 때 +3.4 %p, compressed 구독 때 +3.9 %p였으며 `get_throttled`는 내내 `0x0`이었으므로, 전처리 노드를 새로 만들기 전에 기존 `compressed` 구독으로 충분한지 먼저 검증하는 것이 합리적이다 (250 × 250 preview 값은 각 1회 측정이고 구독자가 Pi 안에 있었다. A안 적용 후 1280 × 720 압축 스트림은 PC에서 약 21.3 Hz, 약 31 Mbit/s로 설정한 30 fps에 못 미쳤고 원인은 아직 모르며, 이 상태의 Pi CPU와 주행 중 부하는 재지 않았다).
+
+## 근거
+
+구분 값: `인용`(출처에서 가져옴), `측정`(직접 잼, 방법을 적는다), `추정`(계산식을 적는다), `미확인`
+
+### 팀 로봇 3번 (도킹 중, 유휴, 12:24 KST)
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| Pi 모델 | Raspberry Pi 4 Model B Rev 1.5 | `/proc/device-tree/model` | 2026-10-02 | 측정 |
+| ROS 도메인 | 3 | `echo $ROS_DOMAIN_ID` | 2026-10-02 | 측정 |
+| CPU 코어 수 | 4 | `nproc` | 2026-10-02 | 측정 |
+| 메모리 | 전체 3.7 GiB, 사용 663 MiB, 가용 3.0 GiB | `free -h` | 2026-10-02 | 측정 |
+| 모델 용량 (4 GB 모델인가) | 전체 RAM 3.7 GiB로 보아 4 GB 모델로 **추정** | 전체 RAM 값에서 유추 | 2026-10-02 | 추정 |
+| 스왑 | 0 B (없음) | `free -h` | 2026-10-02 | 측정 |
+| 디스크 | `/dev/mmcblk0p2`, 29 G 중 7.3 G 사용 (27%), 21 G 남음 | `df -h /` | 2026-10-02 | 측정 |
+| 저장장치 종류 | **SD 카드** (`mmcblk0`, type `SD`), 부팅 파티션 512 M + 루트 29.2 G | `/sys/block/mmcblk0/device/type`, `lsblk` | 2026-10-02 | 측정 |
+| SoC 온도 | 48.2 °C | `vcgencmd measure_temp` | 2026-10-02 | 측정 |
+| `get_throttled` | `0x0` = 저전압, 스로틀링 이력 없음 (비트 의미는 아래 "전원" 절의 인용) | `vcgencmd get_throttled` | 2026-10-02 | 측정 |
+| 위 값이 덮는 기간 | 업타임 35분 (12:28 기준, 약 11:53 부팅). `0x0`은 **부팅 후 약 35분 동안**의 결과이고, 이 시간은 도킹 중 유휴 상태였다 | `uptime` | 2026-10-02 | 측정 |
+| load average | 0.62 / 0.75 / 0.68 (1 / 5 / 15분) | `uptime` | 2026-10-02 | 측정 |
+| CPU 사용률 (도킹 중 유휴) | us 10.9 / sy 9.1 / wa 1.8 / id 78.2 %. `top -bn1`의 **첫 샘플**이라 순간값이 아니라 부팅 이후 평균에 가까울 수 있다 (추정). 프로세스별 %CPU(23.1 %가 세 개 동일)는 같은 이유로 믿지 않는다 | `top -bn1` | 2026-10-02 | 측정 (한계 있음) |
+| 메모리 (`top`) | 전체 3784.1 MiB, 사용 714.8, 가용 3069.3 MiB, 스왑 0 | `top -bn1` | 2026-10-02 | 측정 |
+| Wi-Fi 링크 | `wlan0` 링크 품질 70, 신호 −36 dBm, 잡음 값은 표시 안 됨(−256), 재시도 한도 초과로 버려진 패킷 141개, 놓친 비콘 0 | `/proc/net/wireless` | 2026-10-02 | 측정 |
+| Wi-Fi 해석 | −36 dBm은 일반적으로 신호가 매우 강한 값이다 (공식 출처는 붙이지 않았다). 패킷 141개가 전체에서 차지하는 비율은 전체 패킷 수를 안 재서 판단할 수 없다 | - | 2026-10-02 | 추정 (미확인) |
+| 커널 로그의 저전압 메시지 | 없음 (`dmesg` grep 결과가 비어 있음). 로그 버퍼가 덮는 기간만 해당 | `sudo dmesg -T \| grep -i -E "voltage\|throttl"` | 2026-10-02 | 측정 |
+| 시간 동기화 | `System clock synchronized: yes`, 시간대 Asia/Seoul | `timedatectl` | 2026-10-02 | 측정 |
+| USB 토폴로지 | USB 2.0 버스(480M)에 허브 아래 장치 3개: 드라이버 없는 vendor-specific 장치 1개(480M), 허브 1개, `cp210x` 장치 1개(12M). USB 3.0 버스(5000M)에는 허브만 있고 장치가 없다 | `lsusb -t` | 2026-10-02 | 측정 |
+| 드라이버 없는 USB 장치의 ID | `03e7:2485 Intel Movidius MyriadX` (USB 2.0 버스). 4번 로봇에서 카메라가 동작 중일 때 읽은 ID는 `03e7:f63b`(USB 3.0 버스)였다. **같은 칩이 상태에 따라 다른 ID로 보인다** | `lsusb` (3번, 4번) | 2026-10-02 | 측정 |
+| 위 장치가 OAK-D의 부팅 전 상태인가 | 도킹 중 카메라가 꺼진다는 팀 기록과 맞고, 이 칩은 카메라 외에는 달리 설명할 장치가 없다. 그러나 언도크 후 같은 로봇에서 ID가 `f63b`로 바뀌는지는 아직 보지 않았다 | 추론 | 2026-10-02 | 추정 (미확인) |
+| `cp210x` 장치 | LiDAR의 USB-시리얼 칩으로 보인다 (12M) | `lsusb -t` | 2026-10-02 | 추정 |
+| ROS 노드 | `/robot3/oakd`, `/robot3/oakd_container`, `/robot3/rplidar_composition`, `/robot3/turtlebot4_node`, `/robot3/turtlebot4_base_node`, `/robot3/create3_repub`, `/robot3/robot_state_publisher`, `/robot3/joint_state_publisher`, `/robot3/joy_linux_node`, `/robot3/teleop_twist_joy_node`, Create3 내부 노드 약 10개 (`/robot3/_do_not_use/...`), `/launch_ros_*` | `ros2 node list` | 2026-10-02 | 측정 |
+| Wi-Fi 비트레이트 | `iw` 명령이 없어 읽지 못했다 (`/proc/net/wireless`로 신호만 읽음). 로봇에 패키지는 설치하지 않았다 | - | - | 미확인 |
+
+### 팀 로봇 3번 (언도크 후, 카메라와 LiDAR 동작 중, 정지 상태, 12:30 KST)
+
+모든 `ros2 topic hz/bw` 구독은 **Pi 안에서** 했다. 그래서 대역폭은 토픽 자체의 크기이고, 실제 Wi-Fi 전송량이 아니다. CPU는 `top -bn2 -d 5`의 두 번째 샘플(5초 구간)이며 조건마다 **1회**만 쟀다.
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| 언도크 상태 | 이 블록에서는 `is_docked`를 읽지 않았다. 토픽이 발행되고 USB ID가 바뀐 점으로 언도크됐다고 본다 | 아래 두 행 | 2026-10-02 | 추정 |
+| 카메라 칩 USB ID | `03e7:f63b` (USB 3.0 버스 `Bus 002`). 도킹 중에는 `03e7:2485` (USB 2.0 버스)였다 | `lsusb` | 2026-10-02 | 측정 |
+| ID 변화의 해석 | 도킹 중(카메라 꺼짐) `2485` → 동작 중 `f63b`. 로봇 4번에서 본 `f63b`와도 일치한다. 한 번의 관찰이므로 "`f63b` = 카메라 동작 중"은 아직 **추정**이다 | 위 행 비교 | 2026-10-02 | 추정 |
+| `oakd` 토픽 수 | 7개 (`image_raw` 5종 변형 + `camera_info` + `imu/data`) | `ros2 topic list \| grep -c oakd` | 2026-10-02 | 측정 |
+| `/robot3/scan` 주기 | 평균 7.34 Hz, 주기 0.133 ~ 0.150 s, 표준편차 0.0039 s (창 113 ~ 121개) | `ros2 topic hz` | 2026-10-02 | 측정 |
+| `/robot3/scan` 크기 | 메시지 5.83 KB, 43 KB/s (약 0.35 Mbit/s = 43 × 8) | `ros2 topic bw` | 2026-10-02 | 측정 + 환산 |
+| 영상 `image_raw` 주기 | 평균 30.01 Hz, 주기 0.030 ~ 0.036 s, 표준편차 0.00085 s | `ros2 topic hz` | 2026-10-02 | 측정 |
+| 영상 `image_raw` 크기 | 메시지 0.19 MB, **5.67 MB/s** (약 45 Mbit/s = 5.67 × 8). 250 × 250 × 3 B = 187,500 B와 맞는다 | `ros2 topic bw`, 곱셈 | 2026-10-02 | 측정 + 환산 |
+| 영상 `compressed` 크기 | 메시지 21.09 KB, **633 KB/s** (약 5.1 Mbit/s = 633 × 8) | `ros2 topic bw` | 2026-10-02 | 측정 + 환산 |
+| raw 대비 compressed | 5.67 MB/s ÷ 0.633 MB/s ≈ **9배 작다** (KB 정의에 따라 ±3 % 차이) | 위 두 행 나눗셈 | 2026-10-02 | 추정 |
+| Pi 총 CPU 사용률 (100 − id) | 기준(구독 없음) 23.9 % → `scan` hz 24.4 / bw 24.3 → 영상 raw hz 27.2 / bw 27.3 → compressed bw 27.8 % | `top -bn2 -d 5` | 2026-10-02 | 측정 (조건당 1회) |
+| 기준 대비 증가 | `scan` +0.4 ~ +0.5 %p, raw +3.3 ~ +3.4 %p, compressed +3.9 %p. 4코어 합계 기준이라 코어 1개 = 25 %p. `scan` 증가는 1회 측정으로는 잡음과 구분되지 않을 수 있다 | 위 행 차이 | 2026-10-02 | 추정 |
+| 위 CPU 증가의 구성 | 발행 쪽 비용 + **구독자(`ros2 topic`)가 Pi 안에서 도는 비용**이 섞여 있다. 둘을 나누지 못했다 | - | - | 미확인 |
+| 측정한 영상 스트림 | `rgb/preview` 한 종류. 250 × 250 (메시지 0.19 MB에서 역산), 30 Hz. `rgb/image_raw`나 `stereo/...` 토픽은 없고 `oakd` 토픽이 7개뿐이었다 | `ros2 topic list`, `bw`, `hz` | 2026-10-02 | 측정 |
+| 로봇 3번 `oakd_pro.yaml` 현재 값 | `camera.i_pipeline_type: RGB`, `camera.i_usb_speed: SUPER_PLUS`, `camera.i_enable_imu: false`, `rgb.i_resolution: '1080P'`, `rgb.i_width: 1280`, `rgb.i_height: 720`, `rgb.i_fps: 30.0`, `rgb.i_enable_preview: true`, `rgb.i_preview_size: 250`, `rgb.i_low_bandwidth: true`, **`rgb.i_publish_topic: false`** | 로봇의 `/opt/ros/jazzy/share/turtlebot4_bringup/config/oakd_pro.yaml`을 PC로 복사해 읽음 (583 B) | 2026-10-02 | 측정 |
+| 위 설정과 관측의 일치 | `i_publish_topic: false`라서 `rgb/image_raw`가 없고, `i_preview_size: 250`이라서 preview가 250 × 250이며, `i_pipeline_type: RGB`라서 `stereo` 토픽이 없다. 관측과 모두 맞는다. 설정이 기본값에서 바뀌었는지는 원본과 대조하지 않아 **알 수 없지만**, 바꾼 흔적은 보이지 않는다 | 위 두 행 비교 | 2026-10-02 | 추정 |
+| `i_resolution: 1080P`일 때 출력 크기 | 소스에서 ISP 축소 비율 기본값이 2/3이므로 1920 × 1080이 **1280 × 720**이 된다. `i_width` / `i_height`도 1280 / 720이다. 즉 **지금 yaml이 이미 1280 × 720을 가리킨다**. 이 크기의 메인 스트림을 내보내는 스위치가 `i_publish_topic`이다 (`false` → `true`) | depthai-ros `jazzy` 브랜치 `sensor_param_handler.cpp`, `rgb.cpp` (아래 출처 4) | 2026-10-02 | 인용 + 추정 (로봇에 설치된 버전은 확인 안 함) |
+| `i_low_bandwidth: true`의 효과 | 소스상 메인 RGB 스트림은 카메라 안의 비디오 인코더(기본 MJPEG, 품질 50)를 거친다. preview 스트림에는 인코더가 붙지 않는다. 그래서 **preview에서 잰 Pi CPU 값은 메인 스트림에 그대로 적용되지 않을 수 있다** | `rgb.cpp`, `sensor_param_handler.cpp` | 2026-10-02 | 인용 + 추정 |
+| Depth를 켜면 크기 | `stereo.i_align_depth`가 기본 `true`이고, 켜져 있으면 깊이 크기를 RGB의 `i_width` / `i_height`에서 가져온다. 1280 × 720은 16의 배수라서 소스의 정렬 경고 조건(16으로 나누어떨어지지 않을 때)에 걸리지 않는다. 다만 이 크기로 깊이를 30 Hz로 내보낼 때 카메라, USB, Pi가 버티는지는 **미확인** | `stereo_param_handler.cpp`, `sensor_param_handler.cpp` | 2026-10-02 | 인용 + 추정 |
+| 카메라 설정을 키우면 (가정) | 예를 들어 640 × 480 RGB를 30 Hz로 raw 전송하면 640 × 480 × 3 B = 921,600 B/프레임 × 30 = 27.6 MB/s (약 221 Mbit/s). 지금 측정값(5.67 MB/s)의 약 4.9배. Depth(16비트)를 같은 크기로 더하면 raw로 약 18.4 MB/s가 더해진다 | 곱셈 | 2026-10-02 | 추정 (계산식) |
+| `camera_info`가 알려주는 것 | 필드는 `header`, `height`, `width`, `distortion_model`, `d`, `k`, `r`, `p`, `binning_x`, `binning_y`, `roi`뿐이다. 해상도와 카메라 내부 파라미터는 있지만 **프레임 속도(fps) 필드는 없다.** fps는 `ros2 topic hz`로 잰다 | `ros2 interface show sensor_msgs/msg/CameraInfo` (주석 줄 제외) | 2026-10-02 | 측정 |
+| `get_throttled` | 기준, 모든 구독 구간, 측정 종료 후까지 계속 `0x0` | `vcgencmd get_throttled` | 2026-10-02 | 측정 |
+| 온도 | 50.1 → 51.6 → 52.1 → 52.5 → 53.0 °C (약 2분 동안 구간마다). 계속 올랐고 어디서 멈추는지는 모른다 | `vcgencmd measure_temp` | 2026-10-02 | 측정 (포화 여부 미확인) |
+| load average | 1.13 / 0.85 / 0.73 (12:32, 업타임 39분) | `uptime` | 2026-10-02 | 측정 |
+| Wi-Fi 링크 | 신호 −30 dBm, 링크 품질 70, 재시도 초과 폐기 158개 (12:28의 141개에서 4분 동안 +17). 전체 패킷 수를 안 재서 많은지 판단할 수 없다 | `/proc/net/wireless` | 2026-10-02 | 측정 |
+| 종료 시 오류 메시지 | 마지막 `compressed` 측정 끝에 `failed to initialize wait set: ...` 가 나왔다. `timeout`이 `ros2`를 강제 종료할 때 나는 메시지로 보이며 측정값에는 영향이 없어 보인다 | 출력 | 2026-10-02 | 추정 |
+| 측정 후 상태 | 재도킹 후 `is_docked: True`, 배터리 95 % (도킹 전 98 %에서 언도크 후 95 %) | `ros2 topic echo /robot3/dock_status`, `/robot3/battery_state` (PC에서) | 2026-10-02 | 측정 |
+
+### 팀 로봇 3번 (A안 적용 후, 1280 × 720 메인 스트림, 14:22 ~ 14:24 KST)
+
+아래 값은 같은 PC에서 다른 Claude 세션(수집 도구 담당)이 `ros2 topic hz`, `bw`로 잰 것을 보고받아 옮겼다. **구독자가 PC에 있어서 Wi-Fi를 거친 값**이다 (앞의 250 × 250 preview 값은 Pi 안에서 잰 값이라 위치가 다르다).
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| 적용 내용 | `oakd_pro.yaml`에서 `rgb.i_publish_topic` `false` → `true` 한 줄. 파일 해시(sha256 앞 12자리) 변경 전 `907beb01911c`, 변경 후 `13687e450d94`. 이 PC에서 계산한 백업 원본, 설정안 A 파일의 해시와 각각 같다 | 해시 비교 + 다른 세션 보고 | 2026-10-02 | 측정 |
+| 서비스 재시작 | 14:22에 `turtlebot4-service-restart`, 14:23에 큰 RGB 토픽이 올라왔다 (약 1분) | 다른 세션 보고 | 2026-10-02 | 측정 |
+| 새로 생긴 토픽 | `/robot3/oakd/rgb/image_raw` (Image), `/robot3/oakd/rgb/image_raw/compressed` (CompressedImage) | 다른 세션 보고 | 2026-10-02 | 측정 |
+| 라이브 파라미터 | `i_publish_topic` True, 크기 1280 × 720, `i_fps` 30.0, `i_low_bandwidth` True | 다른 세션 보고 (`ros2 param get`) | 2026-10-02 | 측정 |
+| `camera_info` | 1280 × 720, 초점거리 fx = fy = 1030.28, 중심점 cx = 640.93, cy = 365.66 | 다른 세션 보고 | 2026-10-02 | 측정 |
+| 압축 스트림 주기 | 평균 **21.3 Hz** (창 20개, 1회), 간격 표준편차 0.020 s. 설정값 30 fps에 **못 미친다**. 원인은 모른다 (후보: Pi의 인코딩 CPU, Wi-Fi. 그 밖에 카메라 안 인코더나 호스트 처리도 가능) | 다른 세션 보고 (`ros2 topic hz`) | 2026-10-02 | 측정 (원인 미확인) |
+| 압축 스트림 크기 | 프레임당 0.15 MB, **3.91 MB/s** (약 31 Mbit/s = 3.91 × 8) | 다른 세션 보고 (`ros2 topic bw`) | 2026-10-02 | 측정 + 환산 |
+| 250 × 250 preview의 compressed와 비교 | 프레임당 21.09 KB → 약 150 KB (약 7.1배), 대역폭 0.633 → 3.91 MB/s (약 6.2배). 프레임 주기가 30 → 21.3 Hz로 다르다는 점을 감안한 나눗셈 | 두 표의 값 나눗셈 | 2026-10-02 | 추정 |
+| 같은 크기 raw와 비교 | 1280 × 720 × 3 B = 2.76 MB/프레임 대 압축 0.15 MB로 약 18배 작다 | 곱셈, 나눗셈 | 2026-10-02 | 추정 |
+| 시험 촬영 | 5장 성공, 1280 × 720, 장당 약 150 KB | 다른 세션 보고 | 2026-10-02 | 측정 |
+| 로봇 상태 | 언도크, 배터리 81 % (15.62 V, 전류 −1.02 A 방전). 14:18의 86 %에서 약 6분에 5 %p 감소 | 다른 세션 보고 + 내 측정 | 2026-10-02 | 측정 |
+| 이 구독이 켜진 상태의 Pi CPU, 온도, `get_throttled` | 아직 재지 않았다 | - | - | 미확인 |
+
+### 로봇 3번과 4번 비교
+
+| 항목 | 팀 로봇 3번 | 로봇 4번 |
+|---|---|---|
+| RAM 전체 / 가용 | 3.7 GiB / 3.0 GiB | 1.8 GiB / 1.1 GiB |
+| 스왑 | 없음 | 없음 |
+| 디스크 사용 | 27% (7.3 G) | 28% (7.6 G) |
+| 저장장치 종류 | SD 카드 | 미확인 |
+| `get_throttled` | `0x0` | `0x50000` (과거 저전압, 스로틀링) |
+| 온도 | 48.2 °C | 50.6 ~ 53.5 °C |
+| 배터리 | 98% (PC에서 읽음, 도킹 중) | 90% |
+
+### 로봇 4번: 하드웨어 / 자원
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| CPU 코어 수 | 4 | `nproc` | 2026-10-02 | 측정 |
+| CPU 사용률 (유휴, 1회 스냅샷) | 코어별 13.6 / 10.1 / 15.8 / 20.9 %, load average 0.78 / 0.68 / 0.66 | `htop` 화면, 업타임 약 2시간 52분 | 2026-10-02 | 측정 |
+| 메모리 | 전체 1.8 GiB, 사용 721 MiB, 가용 1.1 GiB | `free -h` | 2026-10-02 | 측정 |
+| 스왑 | 0 B (없음) | `free -h` | 2026-10-02 | 측정 |
+| 모델 이름 (2 GB 모델인가) | 메모리 1.8 GiB로 보아 2 GB 모델로 **추정** | 전체 RAM 값에서 유추 | 2026-10-02 | 추정 |
+| 디스크 | `/dev/mmcblk0p2`, 29 G 중 7.6 G 사용 (28%), 20 G 남음 | `df -h /` | 2026-10-02 | 측정 |
+| 저장장치 종류 (SD 카드 / eMMC) | 슬롯이 안 보인다는 현장 관찰만 있음 | `/sys/block/mmcblk0/device/type` 아직 안 읽음 | - | 미확인 |
+| SoC 온도 | 52.6 °C (11:38 접속 안내 화면), 50.6 °C (11:47), 53.5 °C (11:49) | 접속 안내 화면, `vcgencmd measure_temp` | 2026-10-02 | 측정 |
+| 주요 프로세스 메모리 | rclcpp 계열 프로세스 하나가 RES 194 MiB (10.6%), Create3 관련으로 보이는 프로세스 하나가 약 47 MiB (2.5%) | `htop`. 실행 파일 경로가 잘려 정확한 이름은 미확인 | 2026-10-02 | 측정 |
+
+`htop`은 기본으로 스레드를 행마다 따로 보여준다. 같은 VIRT / RES 값이 반복되는 행은 별도 프로세스가 아니라 한 프로세스의 스레드이므로 더하면 안 된다 (`H` 키로 스레드 표시를 끈다).
+
+### 로봇 4번: 전원
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| `get_throttled` 값 | `0x50000` | `vcgencmd get_throttled` | 2026-10-02 | 측정 |
+| 비트 의미 | 비트 0~3은 현재 상태, 비트 16~19는 "발생한 적 있음". 비트 16 = 저전압 발생, 비트 18 = 스로틀링 발생 | https://www.raspberrypi.com/documentation/computers/os.html | 2026-10-02 | 인용 |
+| 해석 | `0x50000` = 비트 16 + 비트 18. **현재는 정상이지만 과거에 저전압과 스로틀링이 있었다** | 위 두 행 | 2026-10-02 | 추정 (비트 합산) |
+| 이력 비트가 재부팅 전까지 유지되는가 | 위 공식 문서에는 설명이 없다 | - | - | 미확인 |
+| 배터리 | 90% (`percentage` 0.90), 15.76 V, 방전 중 (전류 −0.90 A), 온도 37 °C | `ros2 topic echo /robot4/battery_state --once` | 2026-10-02 | 측정 |
+| 배터리 상태 | `charge` 1.639 Ah / `capacity` 1.819 Ah = 90.1%. `capacity` = `design_capacity` = 1.819 Ah, 열화 징후 없음 | 같은 출력, 나눗셈 | 2026-10-02 | 측정 + 추정 |
+| `power_supply_status` | 0 = UNKNOWN. 충전 상태를 판단하지 못한다는 뜻이며 이 값만으로는 해석하지 않는다 | `sensor_msgs/msg/BatteryState` 정의 | 2026-10-02 | 인용 |
+| 저전압의 원인 | 배터리 잔량은 90%라 **저잔량 때문은 아니다**. 나머지는 모른다 | - | - | 미확인 |
+
+### 로봇 4번: 소프트웨어 / ROS 구성
+
+| 주장 | 값 / 내용 | 출처 | 확인일 | 구분 |
+|---|---|---|---|---|
+| ROS 환경 | `ROS_DOMAIN_ID=4`, `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, 로봇 자신(loopback)에서 Discovery Server 사용 | `echo $ROS_DOMAIN_ID ...` | 2026-10-02 | 측정 |
+| 네임스페이스 | 토픽이 `/robot4/...` 아래에 있다. `/scan`, `/cmd_vel`을 그대로 쓰면 `Unknown topic` 오류가 난다 | `ros2 topic list`, `ros2 topic info /cmd_vel` 실패 | 2026-10-02 | 측정 |
+| 센서 토픽 | `/robot4/scan`, `/robot4/imu`, `/robot4/odom`, `/robot4/battery_state`, `/robot4/wheel_status`, `/robot4/dock_status` 등이 존재 | `ros2 topic list -t` | 2026-10-02 | 측정 |
+| 노드 | `/robot4/oakd`, `/robot4/oakd_container`, `/robot4/rplidar_composition`, `/robot4/turtlebot4_node`, `/robot4/turtlebot4_base_node`, `/robot4/create3_repub`, `/robot4/robot_state_publisher`, `/robot4/joint_state_publisher`, `/robot4/joy_linux_node`, `/robot4/teleop_twist_joy_node` (화면에 보인 범위만. 목록 위쪽이 잘려 있다) | `ros2 node list` | 2026-10-02 | 측정 |
+| 카메라 USB 인식 | `03e7:f63b Intel Myriad VPU` 로 잡힘 | `lsusb` | 2026-10-02 | 측정 |
+| `f63b`가 "펌웨어가 올라간 정상 상태"를 뜻하는가 | 찾지 못했다 | 검색했으나 확인 못 함 | 2026-10-02 | 미확인 |
+| 카메라가 내는 이미지 토픽 | `rgb/preview` 한 종류만, 전송 방식 5개 (`image_raw`, `compressed`, `compressedDepth`, `theora`, `zstd`) + `camera_info`. **depth / stereo 토픽은 없다** | `ros2 node info /robot4/oakd` | 2026-10-02 | 측정 |
+| IMU | 카메라 쪽 `/robot4/oakd/imu/data`가 따로 있다 | 같은 출력 | 2026-10-02 | 측정 |
+| 카메라 제어 서비스 | `start_camera`, `stop_camera`, `save_pipeline`, `save_calibration`, `set_camera_info` 등 | 같은 출력 | 2026-10-02 | 측정 |
+| 압축 전송을 PC에서 구독하면 대역폭이 줄어드는가 | 4번에서는 **재지 않았다**. 팀 로봇 3번에서 쟀다 (위 "팀 로봇 3번 (언도크 후 ...)" 표) | - | - | 미확인 (4번) |
+| 카메라 토픽이 처음에는 목록에 없었다 | 11:47경 `ros2 topic list`에는 `oakd` 토픽이 없었고, 그 뒤 `ros2 node info` / `topic list | grep oakd`에서는 있었다. 중간에 누가 무엇을 했는지 기록이 없어 **원인은 모른다** | `ros2 topic list`, `ros2 node info` | 2026-10-02 | 측정 (원인 미확인) |
+| 도킹 상태에서는 카메라, LiDAR 토픽이 발행되지 않는다 | 팀 로봇 3번에서 확인한 내용이 팀 내부(비공개) 문서에 있다. 위 현상의 원인 후보지만 **로봇 4번에서는 도킹 여부를 확인하지 않았다** | 팀 내부 문서 | 2026-10-01 | 인용 (원인 가설일 뿐) |
+
+## 비교: 어떤 작업을 Pi에 둘 것인가
+
+아래는 위 측정값을 바탕으로 한 **판단(추정)** 이다. 부하 실험 전이므로 확정이 아니다.
+
+| 작업 | Pi에 두는 장점 | 단점 / 위험 | 우리 상황에 맞나 |
+|---|---|---|---|
+| 워치독 (명령이 끊기거나 Wi-Fi가 끊기면 정지) | 네트워크가 끊겨도 동작한다 | 안전 로직이 Pi와 Create3 어느 쪽에서 도는지에 따라 지연이 다르다 (미확인) | 맞다. 가볍다 |
+| 상태 모니터 (CPU, 온도, 메모리, Wi-Fi, 배터리를 토픽으로 발행) | 로컬 정보를 가장 정확히 안다 | 거의 없다 | 맞다 |
+| 센서 압축 / 다운샘플링 | 무선 전송량 감소. 기존 `compressed` 토픽이 3번에서 raw 대비 약 1/9 (0.63 vs 5.67 MB/s, 추정) | Pi CPU 사용: compressed 구독 때 총 사용률 기준 +3.9 %p (1회 측정, 구독자 비용 포함). 새 노드가 이보다 나은지는 모른다 | 기존 `compressed`로 충분한지 **먼저 검증**하고, 부족할 때만 새 노드를 만든다 |
+| OAK-D 카메라 안에서 추론 | Pi CPU, 메모리 부담이 거의 없을 것으로 **추정** (카메라에 VPU가 있다는 점에 근거) | 모델 변환, 지원 모델 제한이 있을 수 있다 (미확인) | 후보. 따로 조사 필요 |
+| Pi에서 YOLO 추론 | 네트워크 불필요 | 스왑이 없어 메모리가 부족하면 프로세스가 강제 종료될 위험. 가용 메모리는 3번 약 3.0 GiB, 4번 약 1.1 GiB. 추론 프로세스의 메모리 요구량과 CPU 부하는 미측정 | 4번 사양에서는 맞지 않다고 **추정**, 팀 로봇 3번은 **미확인** (실측 필요) |
+| Pi에서 SLAM / Nav2 | 지연 감소 | 위와 같은 메모리 위험, CPU 부하 미측정 | 미확인 |
+
+## 저전압 이력에 얼마나 대응할 것인가
+
+이 절은 현장 상황에 대한 **추정과 제안**이며 측정값이 아니다.
+
+### 저전압이 생길 수 있는 경우 (추정)
+
+| 상황 | 저전압 플래그가 남나 | 비고 |
+|---|---|---|
+| 동작 중 전원 케이블을 뽑거나 강제로 끈다 | 남지 않을 가능성이 크다. Pi가 꺼져서 기록할 수 없기 때문이다 | 대신 파일시스템 손상 위험이 있다 |
+| 동작 중 USB 장치(카메라, LiDAR)를 뽑거나 꽂는다 | 순간적으로 5 V 전압이 떨어질 수 있다 | 미확인 |
+| 도킹 / 언도킹으로 전원 공급원이 바뀐다 | 순간 변동이 있을 수 있다 | 미확인 (이번 이력과의 관계도 모름) |
+| 배터리가 거의 방전됐다 | 가능하다 | 이번에는 90%라 해당하지 않는다 (측정) |
+
+### 대응 수준 (제안)
+
+| 수준 | 조건 | 할 일 |
+|---|---|---|
+| 0. 기록 | 항상 | 실험 전후에 `vcgencmd get_throttled`를 찍어 노트에 붙인다. 저전압 중에 잰 CPU / 지연 수치는 믿을 수 없다 |
+| 1. 절차 | 항상 | 동작 중 케이블, USB를 분리하지 않는다. 끌 때는 소프트 종료 후 전원을 분리한다. 배터리가 낮으면 충전 후 실험한다 (구체적인 기준 %는 팀이 정한다) |
+| 2. 조사 | 현재 비트(0~3)가 켜지거나, `dmesg`에 저전압 이벤트가 반복되거나, 갑작스러운 재부팅 / 카메라, LiDAR 사라짐 / 파일시스템 오류가 생길 때 | 전원 경로(케이블, 접촉, 도킹 상태)를 점검하고 교체를 요청한다 |
+| 3. 개조 | 해당 없음 | UPS, 전원 회로 개조는 실습 환경에서 과하다 |
+
+팀 로봇 3번은 `get_throttled`가 `0x0`이고 커널 로그에도 저전압 메시지가 없으므로 수준 0과 1이면 충분하다고 **판단**한다 (부팅 후 35분 동안, 도킹 중 유휴 상태만 본 결과이다). 저전압 이력(`0x50000`)은 로봇 4번의 값이며 우리 로봇의 문제로 보지 않는다. 주행 중, 카메라 구독 중에 같은 값을 다시 읽어서 `0x0`이 유지되는지 확인한다.
+
+## 한계와 미확인
+
+- **조건당 1회 측정이다.** 팀 로봇 3번은 도킹 중 유휴, 언도크 후 카메라와 LiDAR 동작 중(정지) 두 상태만 봤다. **주행 중 부하(Nav2, SLAM, 주행하면서 영상 전송)는 재지 않았다.** CPU 증가량은 반복 측정 없이는 잡음과 구분되지 않을 수 있다.
+- 로봇 4번 값은 우리 로봇의 값이 아니다. 3번과 4번은 RAM부터 달라서 서로 대신 쓸 수 없다.
+- 저장장치 종류, 저전압이 발생한 시각과 횟수, 카메라 토픽이 처음에 없었던 원인, `f63b`의 의미는 모른다.
+- 토픽 주기(Hz)와 대역폭은 **팀 로봇 3번에서 Pi 안의 구독으로만** 쟀다. 로봇 4번은 재지 못했고(토픽 이름에 `/robot4`를 안 붙였고 카메라 토픽도 없었다), 실제 Wi-Fi 전송량(PC에서 구독)은 아직 모른다. 재도킹해서 지금은 카메라와 LiDAR가 꺼져 있다.
+
+## 다음 단계
+
+- [x] 팀 로봇 3번에서 같은 항목(`free -h`, `get_throttled`, `df -h` 등)을 읽는다 (도킹 중 유휴 기준 완료)
+- [x] 3번의 저장장치 종류를 확인한다 (SD 카드). 4번은 미확인
+- [x] 3번의 `dmesg` 저전압 메시지를 확인한다 (없음)
+- [x] 3번에서 `uptime`, CPU 사용률, 무선 신호, `lsusb | grep 03e7`를 읽는다 (도킹 중 기준값 완료. CPU는 첫 샘플이라 한계가 있어, 언도크 후 `top -bn2 -d 5`의 두 번째 샘플로 다시 읽는다)
+- [x] 3번에서 `get_throttled`를 언도크 후 카메라 구독 중에 다시 읽는다 (`0x0` 유지됨, 약 2분 구간)
+- [x] 3번에서 `image_raw`, `compressed`, `/scan`의 Hz, 대역폭, Pi CPU %를 조건별로 잰다 (Pi 안 구독, 1회)
+- [x] 도킹 상태와 카메라 토픽 발행 관계를 3번 로봇에서 다시 확인한다 (언도크 후 발행됨, USB ID `2485` → `f63b`로 바뀜)
+- [x] 3번 `oakd_pro.yaml`을 읽었다 (현재 값은 위 표)
+- [ ] 로봇에 설치된 depthai-ros 버전이 소스(`jazzy` 브랜치)와 같은지 확인한다 (`dpkg -l | grep -i depthai`)
+- [x] 팀이 카메라 설정(yaml)을 바꿨다 (A안, 14:22). 바꾸기 전에 원본을 백업했고(PC와 로봇 홈), 적용 확인은 `camera_info`의 `width` / `height`와 `ros2 topic hz`로 했다. 바꾼 뒤 크기, 주기, 대역폭은 쟀고 Pi 쪽 부하는 남았다. 앞으로 설정을 바꿀 때도 백업과 팀 합의가 먼저다 (같은 로봇을 쓰는 다른 팀과 겹치지 않게)
+- [ ] 같은 조건을 3번 이상 반복해서 CPU 증가량의 변동 폭을 본다
+- [ ] `zstd`, `theora` 구독도 재서 `compressed`와 비교한다
+- [ ] 언도크 후 `lsusb -t`로 카메라가 USB 3 버스(5000M)에 있는지 본다 (이번에는 `lsusb`로 `Bus 002`와 `f63b`만 확인)
+- [ ] OAK-D 안에서 추론하는 방법과 제약을 따로 조사한다 (별도 노트)
+- [x] PC에서 구독할 때의 전송량을 잰다 (1280 × 720 압축 스트림 1회: 3.91 MB/s, 메시지 페이로드 기준이며 DDS 오버헤드는 제외)
+- [ ] 21.3 Hz 원인을 가른다: Pi 안에서 같은 토픽의 `ros2 topic hz`를 재서 30 Hz면 Wi-Fi, 약 21 Hz면 Pi나 카메라 쪽
+- [ ] 압축 구독이 켜진 동안 Pi의 CPU, 온도, `get_throttled`를 잰다 (새 구독 없이 `top`, `vcgencmd`로 수동 측정)
+
+## 출처
+
+1. Raspberry Pi Documentation, Raspberry Pi OS (`vcgencmd get_throttled` 비트 표), https://www.raspberrypi.com/documentation/computers/os.html, 확인일 2026-10-02
+2. ROS 2 `sensor_msgs/msg/BatteryState` 메시지 정의 (`power_supply_status` 0 = UNKNOWN, 1 = CHARGING, 2 = DISCHARGING, 3 = NOT_CHARGING, 4 = FULL. `current`는 방전 때 음수), https://raw.githubusercontent.com/ros2/common_interfaces/jazzy/sensor_msgs/msg/BatteryState.msg, 확인일 2026-10-02 (docs.ros.org는 봇 차단 화면이 나와서 GitHub 원본으로 확인)
+3. 로봇 4번 현장 명령 출력 (`htop`, `free -h`, `df -h`, `vcgencmd`, `ros2 ...`), 2026-10-02 11:38 KST 이후
+4. luxonis/depthai-ros `jazzy` 브랜치 소스: `depthai_ros_driver/src/param_handlers/sensor_param_handler.cpp`, `depthai_ros_driver/src/dai_nodes/sensors/rgb.cpp`, `depthai_ros_driver/src/param_handlers/stereo_param_handler.cpp`, https://github.com/luxonis/depthai-ros/tree/jazzy/depthai_ros_driver/src, 확인일 2026-10-02 (로봇에 설치된 패키지 버전은 확인하지 않았다)
