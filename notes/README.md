@@ -14,5 +14,7 @@
 | 2026-10-02 | [객체 검출 학습·평가 정리의 교차 검증](2026-10-02-object-detection-eval-crosscheck.md) | 수업 중 AI 대화 노트의 주장 중 무엇이 확인되고, 무엇이 우리 프로젝트에 맞지 않는가? | 초안 |
 | 2026-10-02 | [최신 객체 탐지 모델 조사 (GitHub 기준)](2026-10-02-detection-models-latest.md) | 비교 실험에 올릴 최신 탐지 모델은 무엇인가? | 초안 |
 | 2026-10-03 | [주제 후보 C의 baseline 조사 — 소방차 전용구역 막힘](2026-10-03-fire-lane-baseline.md) | 소방차 전용구역 막힘에 대해 BRD의 KPI를 받칠 출처 있는 현재 수치가 있는가? | 초안 |
+| 2026-10-04 | [탐지 말고 세그멘테이션, 포즈, OBB를 쓸 수 있나](2026-10-04-task-types-det-seg-pose-obb.md) | RC카 탐지에 bounding box 탐지 대신 segmentation, pose, OBB를 쓰면 무엇을 얻고 무엇을 잃는가? | 초안 |
+| 2026-10-04 | [OAK-D Pro에서 RGB와 Depth의 시야각과 픽셀 맞추기](2026-10-04-oakd-pro-rgbd-alignment.md) | RGB 박스 좌표로 Depth를 읽으려면 무엇을 설정하고, 어떻게 확인하는가? | 초안 |
 
 상태 값: `초안` → `검토됨` → `확정`
